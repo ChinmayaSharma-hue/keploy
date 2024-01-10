@@ -51,7 +51,7 @@ func (s *mockRecorder) MockRecord(path string, proxyPort uint32, pid uint32, moc
 		s.logger.Error("error while creating hooks", zap.Error(err))
 		return
 	}
-	
+
 	if err := loadedHooks.LoadHooks("", "", pid, ctx, nil); err != nil {
 		return
 	}
@@ -60,7 +60,7 @@ func (s *mockRecorder) MockRecord(path string, proxyPort uint32, pid uint32, moc
 
 	// proxy update its state in the ProxyPorts map
 	// Sending Proxy Ip & Port to the ebpf program
-	if err := loadedHooks.SendProxyInfo(ps.IP4, ps.Port, ps.IP6); err != nil {
+	if err := loadedHooks.SendProxyInfo(ps.IP4, ps.Port, ps.IP6, ps.CertLocation); err != nil {
 		return
 	}
 

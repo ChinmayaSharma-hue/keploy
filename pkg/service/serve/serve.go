@@ -102,7 +102,7 @@ func (s *server) Serve(path string, proxyPort uint32, testReportPath string, Del
 
 	// proxy update its state in the ProxyPorts map
 	// Sending Proxy Ip & Port to the ebpf program
-	if err := loadedHooks.SendProxyInfo(ps.IP4, ps.Port, ps.IP6); err != nil {
+	if err := loadedHooks.SendProxyInfo(ps.IP4, ps.Port, ps.IP6, ps.CertLocation); err != nil {
 		return
 	}
 

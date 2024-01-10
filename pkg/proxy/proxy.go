@@ -77,6 +77,7 @@ type ProxySet struct {
 	dockerAppCmd      bool
 	PassThroughPorts  []uint
 	MongoPassword     string // password to mock the mongo connection and pass the authentication requests
+	CertLocation      string
 }
 
 type CustomConn struct {
@@ -409,6 +410,24 @@ func BootProxy(logger *zap.Logger, opt Option, appCmd, appContainer string, pid 
 	//check if the user application is running docker container using IDE
 	dIDE := (appCmd == "" && len(appContainer) != 0)
 
+	// write the ca.crt contents into a file
+	executablePath, err := os.Executable()
+	if err != nil {
+		logger.Error("Error getting executable path")
+	}
+	executableDir := filepath.Dir(executablePath)
+
+	// Write the embedded certificate to a file in the current directory
+	certFilePath := filepath.Join(executableDir, "ca.crt")
+	err = ioutil.WriteFile(certFilePath, caCrt, 0644)
+	if err != nil {
+		logger.Error("Error writing the ca.crt contents into a file")
+	}
+	certLocation, err := filepath.Abs(certFilePath)
+	if err != nil {
+		logger.Error("Error getting location of ca.crt file")
+	}
+
 	var proxySet = ProxySet{
 		Port:              opt.Port,
 		IP4:               proxyAddr4,
@@ -420,6 +439,7 @@ func BootProxy(logger *zap.Logger, opt Option, appCmd, appContainer string, pid 
 		PassThroughPorts:  passThroughPorts,
 		hook:              h,
 		MongoPassword:     opt.MongoPassword,
+		CertLocation:      certLocation,
 	}
 
 	//setting the proxy port field in hook
@@ -564,6 +584,13 @@ func (ps *ProxySet) startProxy(ctx context.Context) {
 	// 	GetCertificate: certForClient,
 	// }
 	// listener = tls.NewListener(listener, config)
+
+	defer func(name string) {
+		err := os.Remove(name)
+		if err != nil {
+			ps.logger.Error("failed to remove the written certificate", zap.Error(err))
+		}
+	}(ps.CertLocation)
 
 	// retry := 0
 	for {
@@ -888,9 +915,21 @@ func (ps *ProxySet) handleConnection(conn net.Conn, port uint32, ctx context.Con
 		logger := ps.logger.With(zap.Any("Client IP Address", conn.RemoteAddr().String()), zap.Any("Client ConnectionID", clientConnId), zap.Any("Destination IP Address", actualAddress), zap.Any("Destination ConnectionID", destConnId))
 		if isTLS {
 			logger.Debug("", zap.Any("isTLS", isTLS))
+
+			pinnedCerts := ps.hook.GetSslPinnedCerts()
+			pool := x509.NewCertPool()
+			for _, certLocation := range pinnedCerts {
+				cert, err := ioutil.ReadFile(certLocation)
+				if err != nil {
+					logger.Error("failed to read the certificate to be pinned")
+				}
+				pool.AppendCertsFromPEM(cert)
+			}
+
 			config := &tls.Config{
 				InsecureSkipVerify: false,
 				ServerName:         destinationUrl,
+				RootCAs:            pool,
 			}
 			dst, err = tls.Dial("tcp", fmt.Sprintf("%v:%v", destinationUrl, destInfo.DestPort), config)
 			if err != nil && models.GetMode() != models.MODE_TEST {

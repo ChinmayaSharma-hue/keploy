@@ -83,12 +83,14 @@ type bpfProgramSpecs struct {
 	SyscallProbeRetWrite             *ebpf.ProgramSpec `ebpf:"syscall__probe_ret_write"`
 	SyscallProbeRetWritev            *ebpf.ProgramSpec `ebpf:"syscall__probe_ret_writev"`
 	SyscallProbeEntrySocket          *ebpf.ProgramSpec `ebpf:"syscall_probe_entry_socket"`
+	UprobeSslLoadVerifyLocations     *ebpf.ProgramSpec `ebpf:"uprobe_ssl_load_verify_locations"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfMapSpecs struct {
+	TLS_DATA_PERF_OUTPUT      *ebpf.MapSpec `ebpf:"TLS_DATA_PERF_OUTPUT"`
 	ActiveAcceptArgsMap       *ebpf.MapSpec `ebpf:"active_accept_args_map"`
 	ActiveCloseArgsMap        *ebpf.MapSpec `ebpf:"active_close_args_map"`
 	ActiveReadArgsMap         *ebpf.MapSpec `ebpf:"active_read_args_map"`
@@ -112,6 +114,7 @@ type bpfMapSpecs struct {
 	SocketDataEventBufferHeap *ebpf.MapSpec `ebpf:"socket_data_event_buffer_heap"`
 	SocketDataEvents          *ebpf.MapSpec `ebpf:"socket_data_events"`
 	SocketOpenEvents          *ebpf.MapSpec `ebpf:"socket_open_events"`
+	SslPinnedCerts            *ebpf.MapSpec `ebpf:"ssl_pinned_certs"`
 	TaskStructMap             *ebpf.MapSpec `ebpf:"task_struct_map"`
 }
 
@@ -134,6 +137,7 @@ func (o *bpfObjects) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfMaps struct {
+	TLS_DATA_PERF_OUTPUT      *ebpf.Map `ebpf:"TLS_DATA_PERF_OUTPUT"`
 	ActiveAcceptArgsMap       *ebpf.Map `ebpf:"active_accept_args_map"`
 	ActiveCloseArgsMap        *ebpf.Map `ebpf:"active_close_args_map"`
 	ActiveReadArgsMap         *ebpf.Map `ebpf:"active_read_args_map"`
@@ -157,11 +161,13 @@ type bpfMaps struct {
 	SocketDataEventBufferHeap *ebpf.Map `ebpf:"socket_data_event_buffer_heap"`
 	SocketDataEvents          *ebpf.Map `ebpf:"socket_data_events"`
 	SocketOpenEvents          *ebpf.Map `ebpf:"socket_open_events"`
+	SslPinnedCerts            *ebpf.Map `ebpf:"ssl_pinned_certs"`
 	TaskStructMap             *ebpf.Map `ebpf:"task_struct_map"`
 }
 
 func (m *bpfMaps) Close() error {
 	return _BpfClose(
+		m.TLS_DATA_PERF_OUTPUT,
 		m.ActiveAcceptArgsMap,
 		m.ActiveCloseArgsMap,
 		m.ActiveReadArgsMap,
@@ -185,6 +191,7 @@ func (m *bpfMaps) Close() error {
 		m.SocketDataEventBufferHeap,
 		m.SocketDataEvents,
 		m.SocketOpenEvents,
+		m.SslPinnedCerts,
 		m.TaskStructMap,
 	)
 }
@@ -222,6 +229,7 @@ type bpfPrograms struct {
 	SyscallProbeRetWrite             *ebpf.Program `ebpf:"syscall__probe_ret_write"`
 	SyscallProbeRetWritev            *ebpf.Program `ebpf:"syscall__probe_ret_writev"`
 	SyscallProbeEntrySocket          *ebpf.Program `ebpf:"syscall_probe_entry_socket"`
+	UprobeSslLoadVerifyLocations     *ebpf.Program `ebpf:"uprobe_ssl_load_verify_locations"`
 }
 
 func (p *bpfPrograms) Close() error {
@@ -255,6 +263,7 @@ func (p *bpfPrograms) Close() error {
 		p.SyscallProbeRetWrite,
 		p.SyscallProbeRetWritev,
 		p.SyscallProbeEntrySocket,
+		p.UprobeSslLoadVerifyLocations,
 	)
 }
 

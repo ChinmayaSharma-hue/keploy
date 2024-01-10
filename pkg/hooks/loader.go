@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +38,8 @@ import (
 
 var Emoji = "\U0001F430" + " Keploy:"
 
+const libsslPath = "/usr/lib/x86_64-linux-gnu/libssl.so.3"
+
 type Hook struct {
 	proxyInfoMap     *ebpf.Map
 	inodeMap         *ebpf.Map
@@ -46,6 +49,7 @@ type Hook struct {
 	appPidMap        *ebpf.Map
 	keployServerPort *ebpf.Map
 	passthroughPorts *ebpf.Map
+	sslPinnedCerts   *ebpf.Map
 
 	platform.TestCaseDB
 
@@ -92,6 +96,7 @@ type Hook struct {
 	userIpAddress chan string
 	writev        link.Link
 	writevRet     link.Link
+	sslLoadVerify link.Link
 
 	idc clients.InternalDockerClient
 }
@@ -189,7 +194,6 @@ func (h *Hook) IsUsrAppTerminateInitiated() bool {
 	return h.userAppShutdownInitiated
 }
 
-
 func (h *Hook) GetConfigMocks() ([]*models.Mock, error) {
 	it, err := h.localDb.getAll(configMockTable, configMockTableIndex)
 	if err != nil {
@@ -271,9 +275,15 @@ func (h *Hook) SendKeployServerPort(port uint32) error {
 }
 
 // This function sends the IP and Port of the running proxy in the eBPF program.
-func (h *Hook) SendProxyInfo(ip4, port uint32, ip6 [4]uint32) error {
+func (h *Hook) SendProxyInfo(ip4, port uint32, ip6 [4]uint32, certLocation string) error {
 	key := 0
-	err := h.proxyInfoMap.Update(uint32(key), structs.ProxyInfo{IP4: ip4, Ip6: ip6, Port: port}, ebpf.UpdateAny)
+	var byteArray [128]byte
+	// Copy the string into the byte array
+	copy(byteArray[:], certLocation)
+	byteArray[len(certLocation)] = 0
+
+	h.logger.Info(fmt.Sprintf("[CERT] The cert location passed is: %s", certLocation))
+	err := h.proxyInfoMap.Update(uint32(key), structs.ProxyInfo{IP4: ip4, Ip6: ip6, Port: port, CertLocation: byteArray}, ebpf.UpdateAny)
 	if err != nil {
 		h.logger.Error("failed to send the proxy IP & Port to the epbf program", zap.Any("error thrown by ebpf map", err.Error()))
 		return err
@@ -322,7 +332,25 @@ func (h *Hook) GetDestinationInfo(srcPort uint16) (*structs.DestInfo, error) {
 	if err := h.redirectProxyMap.Lookup(srcPort, &destInfo); err != nil {
 		return nil, err
 	}
+
 	return &destInfo, nil
+}
+
+// GetSslPinnedCerts gets SSL Pinned Certificate Locations.
+func (h *Hook) GetSslPinnedCerts() []string {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+
+	var pinnedCerts []string
+	var pidKey uint32
+	var byteArray []byte
+	sslPinnedCertsIter := h.sslPinnedCerts.Iterate()
+
+	for sslPinnedCertsIter.Next(&pidKey, &byteArray) {
+		pinnedCerts = append(pinnedCerts, string(byteArray[:bytes.IndexByte(byteArray, 0)]))
+	}
+
+	return pinnedCerts
 }
 
 // SendAppPid sends the application's process ID (PID) to the kernel.
@@ -504,6 +532,7 @@ func (h *Hook) Stop(forceStop bool) {
 	h.objects.Close()
 	h.writev.Close()
 	h.writevRet.Close()
+	h.sslLoadVerify.Close()
 	h.logger.Info("eBPF resources released successfully...")
 }
 
@@ -545,6 +574,7 @@ func (h *Hook) LoadHooks(appCmd, appContainer string, pid uint32, ctx context.Co
 	h.appPidMap = objs.AppNsPidMap
 	h.keployServerPort = objs.KeployServerPort
 	h.passthroughPorts = objs.PassThroughPorts
+	h.sslPinnedCerts = objs.SslPinnedCerts
 
 	h.stopper = stopper
 	h.objects = objs
@@ -566,6 +596,19 @@ func (h *Hook) LoadHooks(appCmd, appContainer string, pid uint32, ctx context.Co
 		log.Fatalf(Emoji, "opening sys_socket kprobe: %s", err)
 	}
 	h.socket = socket
+
+	// --------- Uprobe for SSL ---------
+
+	ex, err := link.OpenExecutable(libsslPath)
+	if err != nil {
+		log.Fatal(Emoji, "opening executable: ", err)
+	}
+
+	sslLoadVerify, err := ex.Uprobe("SSL_CTX_load_verify_locations", objs.UprobeSslLoadVerifyLocations, nil)
+	if err != nil {
+		log.Fatalf(Emoji, "attaching uprobe: %s", err)
+	}
+	h.sslLoadVerify = sslLoadVerify
 
 	// ------------ For Egress -------------
 

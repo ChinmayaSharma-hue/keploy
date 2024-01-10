@@ -146,7 +146,7 @@ func (t *tester) InitialiseTest(cfg *TestConfig) (InitialiseTestReturn, error) {
 
 	// proxy update its state in the ProxyPorts map
 	//Sending Proxy Ip & Port to the ebpf program
-	if err := returnVal.LoadedHooks.SendProxyInfo(returnVal.ProxySet.IP4, returnVal.ProxySet.Port, returnVal.ProxySet.IP6); err != nil {
+	if err := returnVal.LoadedHooks.SendProxyInfo(returnVal.ProxySet.IP4, returnVal.ProxySet.Port, returnVal.ProxySet.IP6, returnVal.ProxySet.CertLocation); err != nil {
 		return returnVal, err
 	}
 

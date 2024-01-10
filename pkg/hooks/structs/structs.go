@@ -116,7 +116,8 @@ type DestInfo struct {
 // };
 
 type ProxyInfo struct {
-	IP4  uint32
-	Ip6  [4]uint32
-	Port uint32
+	IP4          uint32
+	Ip6          [4]uint32
+	Port         uint32
+	CertLocation [128]byte
 }
